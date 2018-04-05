@@ -7,7 +7,6 @@ import subprocess as sp
 from paprika import amber
 from paprika.analysis import *
 import logging as log
-log.basicConfig(format='%(levelname)s:%(asctime)s: %(message)s')
 
 class Calculation(object):
     """
@@ -49,8 +48,52 @@ class Calculation(object):
             If True, rename the data_dir with a date/time string and create a new data_dir.
             If False, continue HFE calculation from last completed step. Default: False
         leap_load_lines : list
-        
+            The tleap load commands to build your system as a list of strings. The default
+            builds your molecule with GAFF v1.8 in TIP3P water.
+        vac_exec : str
+            Executable for gas phase simulations. Default: pmemd
+        solv_exec : str
+            Executable for solvated simluations. pmemd.cuda is preferred if availabe.
+            Default: pmemd
+        nstlim : int
+            Simulations are run in short iterations, after which convergence is checked.
+            This value sets the number of time steps taken for each iteration.
+            Default: 50000
+        max_itr : int
+            Maximum number of simulation iterations to run. If a window doesn't converge very
+            fast, it is convenient to put an upper limit on how long to run. Default: 10
+        dvdl_thresh : dict
+            The convergence threshold for the dvdl values. A separate threshold is given for
+            each phase. Default: {'decharge': 0.15, 'decouple': 0.15, 'recharge': 0.01}
+        boot_cycs : int
+            The number of bootstrap cycles used to pick a dvdl value from each window (using
+            the distribution defined by the mean/sem) and then integrate the dvdl curve to
+            compute the free energy and uncertainty for each phase. Default: 10000
+        lambdas : dict
+            The lambda values for each phase (decharge, decouple, recharge). Default is 11 evenly spaced
+            windows from 0.0 to 1.0.
 
+        Populated Data (Do not modify)
+        ------------------------------
+        mden_files : dict
+            The list of mden files for each window index (int) in each phase (str): mden_files[phase][win]
+        dvdl_avgs : dict
+            The mean dvdl value for each window index (int) in each phase (str): dvdl_avgs[phase][win]
+        dvdl_sems : dict
+            The SEM dvdl value for each window index (int) in each phase (str): dvdl_sems[phase][win]
+        dvdl_totn : dict
+            The total number of data points for each window index (int) in each phase (str): dvdl_totn[phase][win]
+        dvdl_blkn : dict
+            The slightly truncated number of data points which will yield an ideal blocking curve. Chosen by finding
+            the number nearby totn which has the most factors: dvdl_blkn[phase][win]
+        spline_x : dict
+            The x values for the fitted spline for each phase: spline_x[phase]
+        spline_y : dict
+            The y values for the fitted spline for each phase: spline_y[phase]
+        fe_avgs : dict
+            The mean free energy for each phase from bootstrap calculations: fe_avgs[phase]
+        fe_sems : dict
+            The free energy SEM for each phase from bootstrap calculatiosn: fe_sems[phase]
 
         """
 
@@ -74,17 +117,15 @@ class Calculation(object):
         self.vac_exec = 'pmemd'
         self.solv_exec = 'pmemd'
         self.nstlim = 50000
-        self.max_rst_itr = 10
-        self.dvdl_thresh = {}
-        self.dvdl_thresh['dech'] = 0.15
-        self.dvdl_thresh['decp'] = 0.15
-        self.dvdl_thresh['rech'] = 0.01
+        self.max_itr = 10
+        self.dvdl_thresh = {'decharge': 0.15, 'decouple': 0.15, 'recharge': 0.01}
+        self.boot_cycs = 10000
 
         # Setup lambda divisions for each phase
         self.lambdas = {}
-        self.lambdas['dech'] = np.array("0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0".split(), np.float64)
-        self.lambdas['decp'] = np.array("0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0".split(), np.float64)
-        self.lambdas['rech'] = np.array("0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0".split(), np.float64)
+        self.lambdas['decharge'] = np.array("0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0".split(), np.float64)
+        self.lambdas['decouple'] = np.array("0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0".split(), np.float64)
+        self.lambdas['recharge'] = np.array("0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0".split(), np.float64)
 
         # Stuff we'll collect
         self.mden_files = {}
@@ -97,7 +138,6 @@ class Calculation(object):
         self.fe_avgs = {}
         self.fe_sems = {}
 
-    
     # Refresh leap_load_lines if mol2 or frcmod changes
     @property
     def residue_name(self):
@@ -123,9 +163,11 @@ class Calculation(object):
         self._frcmod = new_frcmod
         self.leap_load_lines[2] = 'loadamberparams '+os.path.basename(new_frcmod)
 
+    def setup_data_dir(self):
+        """
+        Create directory where windows and calculations will be perfomed.
 
-    def setup_data_dir(self, stash_existing=True):
-        """ Create directory for calculations """
+        """
         # Stash existing data_dir if we request it
         if self.stash_existing and os.path.isdir(self.data_dir):
             stash_dir = self.data_dir+"_{:%Y.%m.%d_%H.%M.%S}".format(datetime.now())
@@ -134,47 +176,64 @@ class Calculation(object):
             os.makedirs(self.data_dir)
 
     def build_system(self, phase):
-        """ Build the system with tleap """
+        """
+        Build the system with tleap and parmed.
+
+        Parameters
+        ----------
+        phase : str
+            Specify the phase to build: decharge, decouple, recharge
+
+        """
 
         log.info('Preparing '+phase+' phase with these mol2/frcmod'+self.mol2+' '+self.frcmod)
+
         # Create a dir to store build files
         dir_name = self.data_dir+'/build_'+phase
         log.info('Build directory: '+dir_name)
         if not os.path.isdir(dir_name):
             os.makedirs(dir_name)
+
         # Copy files
         for build_file in [self.mol2, self.frcmod]:
             shutil.copy(build_file, dir_name)
+
         # Write tleap input file
         with open(dir_name+'/tleap.in', 'w') as f:
             for line in self.leap_load_lines:
                 f.write(line + "\n")
+
             # Build the model ... duplicate moleules for charging steps
-            if phase in ['dech', 'rech']:
+            if phase in ['decharge', 'recharge']:
                 f.write("model = combine{{ {0} {0} }}\n".format(self.residue_name))
-            elif phase == 'decp':
+            elif phase == 'decouple':
                 f.write("model = combine{{ {0} }}\n".format(self.residue_name))
             else:
                 raise Exception('build_system does not recognize phase: '+phase)
-            # Solvate for dech and decp
-            if phase in ['dech', 'decp']:
+
+            # Solvate for decharge and decouple
+            if phase in ['decharge', 'decouple']:
                 f.write("solvateoct model {} 15.0 iso\n".format(self.water_box))
+
             # Save files
             f.write("savepdb model {}.pdb\n".format(phase))
-            if phase == 'decp':
-                f.write("saveamberparm model decp.prmtop decp.rst7\n")
-                prmtop_name = 'decp.prmtop'
+            if phase == 'decouple':
+                f.write("saveamberparm model decouple.prmtop decouple.rst7\n")
+                prmtop_name = 'decouple.prmtop'
             else:
                 f.write("saveamberparm model init.{0}.prmtop init.{0}.rst7\n".format(phase))
                 prmtop_name = 'init.'+phase+'.prmtop'
             f.write("quit\n")
+
         # Execute tleap
         exec_list = ['tleap','-s','-f','tleap.in']
         with open(dir_name+'/tleap.out', 'w') as f:
             sp.call(exec_list, cwd=dir_name, stdout=f, stderr=sp.STDOUT)
         if not os.path.isfile(dir_name+'/'+prmtop_name):
             raise Exception('tleap was unable to build the prmtop: '+dir_name+'/'+prmtop_name)
-        if phase in ['dech', 'rech']:
+
+        # If 
+        if phase in ['decharge', 'recharge']:
             # Write parmed input file
             with open(dir_name+'/parmed.in', 'w') as f:
                 f.write("""\
@@ -185,6 +244,7 @@ parmout {0}.prmtop
 writecoordinates {0}.rst7
 go
                 """.format(phase))
+
             # Execute parmed
             exec_list = ['parmed', '-O', '-i', 'parmed.in']
             with open(dir_name+'/parmed.out', 'w') as f:
@@ -193,17 +253,25 @@ go
                 raise Exception('parmed was unable to prepare '+dir_name+'/'+phase+'.prmtop')
 
     def run_windows(self, phase):
-        """ Setup windows for a TI calculation """
+        """
+        Run windows for a TI calculation.
+
+        Parameters
+        ----------
+        phase : str
+            Specify the phase to run: decharge, decouple, recharge
+
+        """
 
         # Check phase matches expectations
-        if not phase in ['dech', 'decp', 'rech']:
-            raise Exception('phase must be one of the following: dech, decp, rech')
+        if not phase in ['decharge', 'decouple', 'recharge']:
+            raise Exception('phase must be one of the following: decharge, decouple, recharge')
 
         log.info('Running '+phase+' phase ....')
 
         # Setup Simulation
         sim = amber.Simulation()
-        if phase == 'rech':
+        if phase == 'recharge':
             sim.executable = self.vac_exec
         else:
             sim.executable = self.solv_exec
@@ -213,7 +281,7 @@ go
         sim.cntrl.pop('pencut', None)
         sim.cntrl['icfe'] = 1
         sim.cntrl['clambda'] = 0.0
-        if phase == 'decp':
+        if phase == 'decouple':
             sim.cntrl['ntmin'] = 2
             sim.cntrl['ifsc'] = 1
             sim.cntrl['timask1'] = "':1'"
@@ -224,18 +292,19 @@ go
             sim.cntrl['ifsc'] = 0
             sim.cntrl['timask1'] = "':1'"
             sim.cntrl['timask2'] = "':2'"
-        if phase in ['decp', 'rech']:
+        if phase in ['decouple', 'recharge']:
             sim.cntrl['crgmask'] = "':1'"
-        if phase == 'dech':
+        if phase == 'decharge':
             sim.cntrl['crgmask'] = "':2'"
 
         # Iterate over the restart level
-        for itr in range(self.max_rst_itr):
+        for itr in range(self.max_itr):
             log.info('Beginning Iteration {:.0f} -------------'.format(itr))
             new_data = False
             prev = "{:03.0f}".format(itr)
             curr = "{:03.0f}".format(itr+1)
-            # Iterate over each lambda in this phase
+
+            # Iterate over each lambda window in this phase
             for l,win_val in enumerate(self.lambdas[phase]):
                 dir_name = self.data_dir+'/'+phase+"_{:7.5f}".format(win_val)
                 if itr == 0:
@@ -256,7 +325,7 @@ go
                     # Minimize
                     sim.prefix = 'minimize'
                     sim.inpcrd = phase+'.rst7'
-                    if phase == 'rech':
+                    if phase == 'recharge':
                         sim.config_gb_min()
                         sim.cntrl['igb'] = 6
                     else:
@@ -268,19 +337,19 @@ go
                         if self.solv_exec == 'pmemd.cuda':
                             sim.executable = 'pmemd'
                         sim.run(overwrite=True)
-                        if phase == 'rech':
+                        if phase == 'recharge':
                             sim.executable = self.vac_exec
                         else:
                             sim.executable = self.solv_exec
     
-                # MD
+                # Setup MD for various phases
                 sim.prefix = 'md.'+curr
-                if phase == 'rech':
+                if phase == 'recharge':
                     sim.config_gb_md()
                     sim.cntrl['igb'] = 6
                 else:
                     sim.config_pbc_md()
-                if phase == 'decp':
+                if phase == 'decouple':
                     sim.cntrl['ntf'] = 1
                 sim.cntrl['nstlim'] = self.nstlim
                 sim.cntrl['dt'] = 0.001
@@ -289,12 +358,14 @@ go
                 else:
                     sim.inpcrd = 'md.'+prev+'.rst7'
                     sim.cntrl['ntx'] = 5
-                    sim.cntrl['irest'] = 0
+                    sim.cntrl['irest'] = 1
+
                 # Check if this itr is already finished:
                 itr_not_finished = True
                 if os.path.isfile(dir_name+'/'+sim.output):
                     if not ' TIMINGS ' in open(dir_name+'/'+sim.output, 'r').read():
                         itr_not_finished = False
+
                 # Run itr if we aren't finished and we're still above dvdl_thresh
                 if itr_not_finished and itr == 0:
                     sim.run(overwrite=True)
@@ -313,9 +384,22 @@ go
             if new_data or itr == 0:
                 self.get_fe(phase)
 
-
     def get_mden_files(self, dir_name):
-        """ Collects and stores mden files in a list """
+        """
+        Collect and store mden files in a list.
+
+        Parameters
+        ----------
+        dir_name : str
+            Directory to gather mden files. File format is currently
+            hardcoded to md.{:03.0f}.mden.
+
+        Returns
+        -------
+        mden_files : list
+            A list of mden filepaths
+
+        """
 
         mden_files = []
         i = 1
@@ -325,7 +409,20 @@ go
         return mden_files
 
     def get_dvdls(self, file_list):
-        """ Collect dvdl values from list of mden files """
+        """
+        Collect dvdl values from list of mden files.
+
+        Parameters
+        ----------
+        file_list : list
+            A list of mden filepaths
+
+        Returns
+        -------
+        dvdl : np.array
+            The timeseries of dvdl values
+
+        """
 
         dvdl = []
         for mden in file_list:
@@ -337,13 +434,40 @@ go
                     dvdl.append(cols[-1])
         return np.array(dvdl, np.float64)
         
-
     def get_fe(self, phase):
-        """ Compute the free energy for a phase """
+        """
+        Compute the free energy for a given phase.
+
+        Parameters
+        ----------
+        phase : str
+            Specify the phase to run: decharge, decouple, recharge
+
+        Class Variables Set
+        -------------------
+        dvdl_avgs : dict
+            The mean dvdl value for each window index (int) in each phase (str): dvdl_avgs[phase][win]
+        dvdl_sems : dict
+            The SEM dvdl value for each window index (int) in each phase (str): dvdl_sems[phase][win]
+        dvdl_totn : dict
+            The total number of data points for each window index (int) in each phase (str): dvdl_totn[phase][win]
+        dvdl_blkn : dict
+            The slightly truncated number of data points which will yield an ideal blocking curve. Chosen by finding
+            the number nearby totn which has the most factors: dvdl_blkn[phase][win]
+        spline_x : dict
+            The x values for the fitted spline for each phase: spline_x[phase]
+        spline_y : dict
+            The y values for the fitted spline for each phase: spline_y[phase]
+        fe_avgs : dict
+            The mean free energy for each phase from bootstrap calculations: fe_avgs[phase]
+        fe_sems : dict
+            The free energy SEM for each phase from bootstrap calculatiosn: fe_sems[phase]
+
+        """
 
         # Check phase matches expectations
-        if not phase in ['dech', 'decp', 'rech']:
-            raise Exception('phase must be one of the following: dech, decp, rech')
+        if not phase in ['decharge', 'decouple', 'recharge']:
+            raise Exception('phase must be one of the following: decharge, decouple, recharge')
 
         log.info('Computing free energy via bootstrapping on phase: '+phase)
         self.dvdl_avgs[phase] = np.zeros([self.lambdas[phase].size], np.float64)
@@ -384,13 +508,12 @@ go
         self.spline_y[phase] = interpolate(self.lambdas[phase], self.dvdl_avgs[phase], self.spline_x[phase])
 
         # We're gonna bootstrap a bunch of fe values. Create storage arrays
-        boot_cycs = 10000
-        fe_boot = np.zeros([boot_cycs], np.float64)
+        fe_boot = np.zeros([self.boot_cycs], np.float64)
         # We'll precompute all samples of dvdls based on our dvdl_avg/sem
-        boot_dvdls = np.zeros([self.lambdas[phase].size, boot_cycs], np.float64)
+        boot_dvdls = np.zeros([self.lambdas[phase].size, self.boot_cycs], np.float64)
         for i in range(self.lambdas[phase].size):
-            boot_dvdls[i][:] = np.random.normal(self.dvdl_avgs[phase][i],self.dvdl_sems[phase][i],boot_cycs)
-        for cyc in range(boot_cycs):
+            boot_dvdls[i][:] = np.random.normal(self.dvdl_avgs[phase][i],self.dvdl_sems[phase][i],self.boot_cycs)
+        for cyc in range(self.boot_cycs):
             boot_spline_y = interpolate(self.lambdas[phase], boot_dvdls[:,cyc], self.spline_x[phase])
             fe_boot[cyc] = np.trapz(boot_spline_y, self.spline_x[phase])
 
@@ -400,19 +523,24 @@ go
 
         log.info("{} free energy: {:8.3f} ({:8.3f})".format(phase,self.fe_avgs[phase],self.fe_sems[phase]))
 
-        
+def interpolate(x, y, x_new):
+    """
+    Create an akima spline.
 
+    Parameters
+    ----------
+    x : list or np.array
+        The x values for your data
+    y : list or np.array
+        The y values for your data
+    x_new : list or np.array
+        The x values for your desired spline
 
-        
-            
-            
-
-
-
-
-
-
-def interpolate(x, y, x_new, axis=-1, out=None):
+    Returns
+    -------
+    y_new : np.array
+        The y values for your spline
+    """
     # Copyright (c) 2007-2015, Christoph Gohlke
     # Copyright (c) 2007-2015, The Regents of the University of California
     # Produced at the Laboratory for Fluorescence Dynamics
@@ -444,8 +572,8 @@ def interpolate(x, y, x_new, axis=-1, out=None):
     x = np.array(x, dtype=np.float64, copy=True)
     y = np.array(y, dtype=np.float64, copy=True)
     xi = np.array(x_new, dtype=np.float64, copy=True)
-    if axis != -1 or out is not None or y.ndim != 1:
-        raise NotImplementedError("implemented in C extension module")
+    if y.ndim != 1:
+        raise NotImplementedError("y.ndim != 1 is not supported!")
     if x.ndim != 1 or xi.ndim != 1:
         raise ValueError("x-arrays must be one dimensional")
     n = len(x)
