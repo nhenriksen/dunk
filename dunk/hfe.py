@@ -11,23 +11,54 @@ log.basicConfig(format='%(levelname)s:%(asctime)s: %(message)s')
 
 class Calculation(object):
     """
-    Run a hydration free energy calculation for a small molecule in AMBER.
+    Peforms a hydration free energy calculation for a small molecule in AMBER.
 
-    Order of operations:
-    solv_system --decharge--> solv_system --decouple--> vac_system --recharge--> vac_system
+    Order of operations for 3 step alchemical transformation:
+
+    1. Solvated System
+          --Decharge Solute--> 
+              Solvated System (Decharged Solute)
+
+    2. Solvated System (Decharged Solute)
+          --Decouple Solute-->
+              Gas Phase System (Decharged Solute)
+
+    3. Gas Phase System (Decharged Solute)
+          --Recharge Solute-->
+              Gas Phase System
 
     """
 
 
     def __init__(self):
-        """ Setup Default Values """
+        """
+        Class Variables
+        ---------------
+        residue_name : str
+            Residue name of solute, as provided in the mol2 file. Default: MOL
+        mol2 : str
+            The mol2 file name. Currently only supports single residue molecules.
+            Default: mol.mol2
+        frcmod : str
+            The frcmod file name. Default: mol.frcmod
+        water_box : str
+            The tleap water box (eg TIP3PBOX, TIP4PEWBOX). Default: TIP3PBOX
+        data_dir : str
+            Directory path in which to build and run simulation windows. Default: windows
+        stash_existing : bool
+            If True, rename the data_dir with a date/time string and create a new data_dir.
+            If False, continue HFE calculation from last completed step. Default: False
+        leap_load_lines : list
+        
+
+
+        """
 
         # Build files and settings
         self._residue_name = 'MOL'
         self._mol2 = 'mol.mol2'
         self._frcmod = 'mol.frcmod'
-        self.water_model = 'TIP3P'
-        self.build_files = [self._mol2, self._frcmod]
+        self.water_box = 'TIP3PBOX'
         self.data_dir = './windows'
         self.stash_existing = False
 
@@ -67,7 +98,7 @@ class Calculation(object):
         self.fe_sems = {}
 
     
-    # Refresh build_files if mol2 or frcmod changes
+    # Refresh leap_load_lines if mol2 or frcmod changes
     @property
     def residue_name(self):
         return self._residue_name
@@ -82,7 +113,6 @@ class Calculation(object):
     @mol2.setter
     def mol2(self, new_mol2):
         self._mol2 = new_mol2
-        self.build_files = [new_mol2, self._frcmod]
         self.leap_load_lines[3] = self._residue_name+' = loadmol2 '+os.path.basename(new_mol2)
 
     @property
@@ -91,7 +121,6 @@ class Calculation(object):
     @frcmod.setter
     def frcmod(self, new_frcmod):
         self._frcmod = new_frcmod
-        self.build_files = [self._mol2, new_frcmod]
         self.leap_load_lines[2] = 'loadamberparams '+os.path.basename(new_frcmod)
 
 
@@ -114,7 +143,7 @@ class Calculation(object):
         if not os.path.isdir(dir_name):
             os.makedirs(dir_name)
         # Copy files
-        for build_file in self.build_files:
+        for build_file in [self.mol2, self.frcmod]:
             shutil.copy(build_file, dir_name)
         # Write tleap input file
         with open(dir_name+'/tleap.in', 'w') as f:
@@ -129,7 +158,7 @@ class Calculation(object):
                 raise Exception('build_system does not recognize phase: '+phase)
             # Solvate for dech and decp
             if phase in ['dech', 'decp']:
-                f.write("solvateoct model {}BOX 15.0 iso\n".format(self.water_model))
+                f.write("solvateoct model {} 15.0 iso\n".format(self.water_box))
             # Save files
             f.write("savepdb model {}.pdb\n".format(phase))
             if phase == 'decp':
