@@ -1,0 +1,9 @@
+source leaprc.gaff
+source leaprc.water.tip3p
+loadamberparams thf.frcmod
+THF = loadmol2 thf.mol2
+model = combine{ THF THF }
+solvateoct model TIP3PBOX 15.0 iso
+savepdb model decharge.pdb
+saveamberparm model init.decharge.prmtop init.decharge.rst7
+quit

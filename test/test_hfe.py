@@ -59,8 +59,7 @@ def test_build_system():
     # Remove output
     shutil.rmtree('output')
 
-@pytest.mark.slow
-def test_run_windows():
+def test_run_windows_no_pmemd():
 
     # Remove previous output, create fresh output
     if os.path.exists('output'):
@@ -80,6 +79,62 @@ def test_run_windows():
     calc.mol2 = 'input/thf.mol2'
     calc.frcmod = 'input/thf.frcmod'
     calc.data_dir = 'output/windows'
+    calc.vac_exec = 'sander'
+    calc.solv_exec = 'sander'
+    calc.no_pmemd = True
+    calc.maxcyc = 1
+    calc.nstlim = 2
+    calc.ntwe = 1
+    calc.ntp = 0
+    calc.ig = 39383
+    calc.max_itr = 1
+    calc.lambdas['decharge'] = np.array("0.0 0.5 1.0".split(), np.float64)
+    calc.lambdas['decouple'] = np.array("0.0 0.5 1.0".split(), np.float64)
+    calc.lambdas['recharge'] = np.array("0.0 0.5 1.0".split(), np.float64)
+    calc.setup_data_dir()
+    for phase in ['decharge', 'decouple', 'recharge']:
+        # Build files
+        calc.build_system(phase)
+        # Run windows
+        calc.run_windows(phase)
+        # Compare
+        for filetype in ['0.00000_md.001.out', '0.50000_md.001.out', '1.00000_md.001.out']:
+            cols = filetype.split('_')
+            with open('output/windows/'+phase+'_'+cols[0]+'/'+cols[1], 'r') as f:
+                # We're gonna skip the first 12 lines because they environment settings
+                # at runtime that will fail the test.
+                test_file = f.readlines()[12:]
+            with open('reference/thf_'+phase+'_'+filetype, 'r') as f:
+                ref_file = f.readlines()[12:]
+            assert test_file == ref_file
+
+    # Remove output
+    #shutil.rmtree('output')
+
+
+@pytest.mark.slow
+def test_run_windows_with_pmemd():
+
+    # Remove previous output, create fresh output
+    if os.path.exists('output'):
+        shutil.rmtree('output')
+    os.makedirs('output')
+
+    # Reference values
+    ref_dvdl_avgs = {
+        'decharge': np.array([-4.75661423, -4.75736718, -4.75811992]),
+        'decouple': np.array([ 6.73452912,  6.51572821,  6.31032105]),
+        'recharge': np.array([ 0.16487367,  0.16482078,  0.16476788]),
+    }
+
+    # Setup calculation
+    calc = hfe.Calculation()
+    calc.residue_name = 'THF'
+    calc.mol2 = 'input/thf.mol2'
+    calc.frcmod = 'input/thf.frcmod'
+    calc.data_dir = 'output/windows'
+    calc.vac_exec = 'sander'
+    calc.solv_exec = 'sander'
     calc.maxcyc = 1
     calc.nstlim = 2
     calc.ntwe = 1

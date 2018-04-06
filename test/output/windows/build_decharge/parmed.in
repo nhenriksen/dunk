@@ -1,0 +1,7 @@
+parm init.decharge.prmtop
+loadcoordinates init.decharge.rst7
+timerge :1 :2 :1 :2
+parmout decharge.prmtop
+writecoordinates decharge.rst7
+go
+                

@@ -1,0 +1,69 @@
+
+          -------------------------------------------------------
+          Amber 16 SANDER                              2016
+          -------------------------------------------------------
+
+| Run on 04/06/2018 at 16:58:20
+
+|   Executable path: sander
+| Working directory: /data/henrikse/data_kirkwood/projects/dunk/test/output/windows/decharge_0.50000
+|          Hostname: enthalpy.ucsd.edu
+
+  [-O]verwriting output
+
+File Assignments:
+|  MDIN: md.001.in                                                             
+| MDOUT: md.001.out                                                            
+|INPCRD: minimize.rst7                                                         
+|  PARM: decharge.prmtop                                                       
+|RESTRT: md.001.rst7                                                           
+|  REFC: md.001.inpcrd                                                         
+| MDVEL: mdvel                                                                 
+| MDFRC: mdfrc                                                                 
+|  MDEN: md.001.mden                                                           
+| MDCRD: md.001.nc                                                             
+|MDINFO: md.001.mdinfo                                                         
+|  MTMD: mtmd                                                                  
+|INPDIP: inpdip                                                                
+|RSTDIP: rstdip                                                                
+|INPTRA: inptraj                                                               
+
+
+ Here is the input file:
+
+PBC MD Simulation                                                              
+ &cntrl                                                                        
+  imin =          0,                                                           
+  ntx =           1,                                                           
+  irest =         0,                                                           
+  maxcyc =        0,                                                           
+  ncyc =          0,                                                           
+  dt =            0.001,                                                       
+  nstlim =        2,                                                           
+  ntpr =          500,                                                         
+  ntwe =          1,                                                           
+  ntwr =          5000,                                                        
+  ntwx =          0,                                                           
+  ntxo =          1,                                                           
+  ioutfm =        1,                                                           
+  ntf =           2,                                                           
+  ntc =           2,                                                           
+  cut =           8.0,                                                         
+  igb =           0,                                                           
+  tempi =         298.15,                                                      
+  temp0 =         298.15,                                                      
+  ntt =           3,                                                           
+  gamma_ln =      1.0,                                                         
+  ig =            39383,                                                       
+  ntp =           0,                                                           
+  barostat =      2,                                                           
+  nmropt =        0,                                                           
+  icfe =          1,                                                           
+  clambda =       0.5,                                                         
+  ifsc =          0,                                                           
+  timask1 =       ':1',                                                        
+  timask2 =       ':2',                                                        
+  crgmask =       ':2',                                                        
+  ntmin =         2,                                                           
+ /                                                                             
+ error in reading namelist cntrl

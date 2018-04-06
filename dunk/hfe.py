@@ -59,6 +59,9 @@ class Calculation(object):
         solv_exec : str
             Executable for solvated simluations. pmemd.cuda is preferred if availabe.
             Default: pmemd
+        no_pmemd : bool
+            If True, the get_fe() function is not called because presumably no data was
+            created. This option is only for testing, ie, Travis.
         maxcyc : int
             Minimization cycles to run. Default: 500
         nstlim : int
@@ -131,6 +134,7 @@ class Calculation(object):
         # Execution settings
         self.vac_exec = 'pmemd'
         self.solv_exec = 'pmemd'
+        self.no_pmemd = False
         self.maxcyc = 500
         self.nstlim = 50000
         self.ntwe = 250
@@ -252,7 +256,7 @@ class Calculation(object):
         if not os.path.isfile(dir_name+'/'+prmtop_name):
             raise Exception('tleap was unable to build the prmtop: '+dir_name+'/'+prmtop_name)
 
-        # If 
+        # If charging, let's do timerge (NMH: check if this is needed!) 
         if phase in ['decharge', 'recharge']:
             # Write parmed input file
             with open(dir_name+'/parmed.in', 'w') as f:
@@ -404,6 +408,11 @@ go
                     log.info('Data in '+dir_name+' is converged. Skipping ...')
                     pass
 
+            # If we don't have pmemd (ie Travis testing), break out here
+            # because we haven't made any data.
+            if self.no_pmemd:
+                break
+
             # Get dvdl's and free energy
             if new_data or itr == 0:
                 self.get_fe(phase)
@@ -427,6 +436,9 @@ go
 
         mden_files = []
         i = 1
+        if not os.path.isfile(dir_name+"/md.{:03.0f}.mden".format(i)):
+            raise Exception("The file "+dir_name+"/md.{:03.0f}.mden".format(i)+" was not found!\n"
+                            "There was probably an execution problem\n")
         while os.path.isfile(dir_name+"/md.{:03.0f}.mden".format(i)):
             mden_files.append(dir_name+"/md.{:03.0f}.mden".format(i))
             i += 1
