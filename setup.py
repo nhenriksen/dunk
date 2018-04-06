@@ -1,8 +1,11 @@
 from setuptools import setup
+from dunk.version import find_version
+
+version_string = str(find_version())
 
 setup(
     name='dunk',
-    version='0.1',
+    version=version_string,
     description='Tools for computing hydration free energies in AMBER.',
     url='https://github.com/nhenriksen/dunk',
     author='Niel M. Henriksen',

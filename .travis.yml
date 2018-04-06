@@ -1,0 +1,33 @@
+sudo: false
+
+language: python
+
+python:
+    - "2.7"
+    - "3.6"
+
+install:
+    - chmod +x test/travis-install.sh
+    - source test/travis-install.sh
+    - pip install .
+#    - pip install --user .
+
+script:
+    - cd test && pytest -vx -m 'not slow' --cov=dunk .
+
+after_success:
+    - codecov
+
+before_cache:
+    - rm -rf $HOME/miniconda/conda-bld
+    - rm -f $HOME/miniconda/pkgs/*.tar.bz2
+    - rm -f $HOME/.cache/pip/log/debug.log
+
+cache:
+    directories:
+        - $HOME/.cache/pip
+        - $HOME/miniconda
+
+notifications:
+    email: True
+

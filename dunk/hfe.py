@@ -8,6 +8,10 @@ from paprika import amber
 from paprika.analysis import *
 import logging as log
 
+"""
+hfe: Perform hydration free energy calculations using Amber.
+"""
+
 class Calculation(object):
     """
     Peforms a hydration free energy calculation for a small molecule in AMBER.
@@ -55,10 +59,21 @@ class Calculation(object):
         solv_exec : str
             Executable for solvated simluations. pmemd.cuda is preferred if availabe.
             Default: pmemd
+        maxcyc : int
+            Minimization cycles to run. Default: 500
         nstlim : int
             Simulations are run in short iterations, after which convergence is checked.
             This value sets the number of time steps taken for each iteration.
             Default: 50000
+        ntwe : int
+            The time step interval between writing simulation dvdl output. Default: 250
+        ntwx : int
+            The time step interval between writing trajectory output. Default: 0
+        ntp : int
+            The setting for constant pressure (1) or constant volume (0) simulation. Default: 1
+        ig : int
+            The random number seed for the Langevin thermostat. A value of -1 will set a different
+            seed each for each simulation. Default: -1
         max_itr : int
             Maximum number of simulation iterations to run. If a window doesn't converge very
             fast, it is convenient to put an upper limit on how long to run. Default: 10
@@ -116,7 +131,12 @@ class Calculation(object):
         # Execution settings
         self.vac_exec = 'pmemd'
         self.solv_exec = 'pmemd'
+        self.maxcyc = 500
         self.nstlim = 50000
+        self.ntwe = 250
+        self.ntwx = 0
+        self.ntp = 1
+        self.ig = -1
         self.max_itr = 10
         self.dvdl_thresh = {'decharge': 0.15, 'decouple': 0.15, 'recharge': 0.01}
         self.boot_cycs = 10000
@@ -330,8 +350,8 @@ go
                         sim.cntrl['igb'] = 6
                     else:
                         sim.config_pbc_min()
-                    sim.cntrl['maxcyc'] = 500
-                    sim.cntrl['ncyc'] = 100
+                    sim.cntrl['maxcyc'] = self.maxcyc
+                    sim.cntrl['ncyc'] = int(np.ceil(0.2*self.maxcyc))
                     sim.cntrl['ntmin'] = 2
                     if not os.path.isfile(dir_name+'/minimize.rst7'):
                         if self.solv_exec == 'pmemd.cuda':
@@ -349,10 +369,14 @@ go
                     sim.cntrl['igb'] = 6
                 else:
                     sim.config_pbc_md()
+                    sim.cntrl['ntp'] = self.ntp
                 if phase == 'decouple':
                     sim.cntrl['ntf'] = 1
                 sim.cntrl['nstlim'] = self.nstlim
                 sim.cntrl['dt'] = 0.001
+                sim.cntrl['ntwe'] = self.ntwe
+                sim.cntrl['ntwx'] = self.ntwx
+                sim.cntrl['ig'] = self.ig
                 if itr == 0:
                     sim.inpcrd = 'minimize.rst7'
                 else:
@@ -579,7 +603,7 @@ def interpolate(x, y, x_new):
     n = len(x)
     if n < 3:
         raise ValueError("array too small")
-    if n != y.shape[axis]:
+    if n != y.shape[-1]:
         raise ValueError("size of x-array must match data shape")
     dx = np.diff(x)
     if any(dx <= 0.0):
