@@ -9,9 +9,8 @@ python:
 install:
     - chmod +x test/travis-install.sh
     - source test/travis-install.sh
-    - pip install git+https://github.com/slochower/pAPRika
+    - pip install git+https://github.com/slochower/pAPRika@4f204a1a1190386d652e38464e45582d8734b705
     - pip install .
-#    - pip install --user .
 
 script:
     - cd test && pytest -vx -m 'not slow' --cov=dunk .
