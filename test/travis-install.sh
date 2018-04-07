@@ -1,5 +1,5 @@
 ### If you need to do a fresh install, enable following
-rm -rf $HOME/miniconda
+#rm -rf $HOME/miniconda
 
 ### Regular install, check for cached first.
 if [ -d "$HOME/miniconda" ]; then
