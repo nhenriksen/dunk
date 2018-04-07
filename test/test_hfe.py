@@ -156,7 +156,28 @@ def test_run_windows_with_pmemd():
     # Remove output
     shutil.rmtree('output')
 
+def test_get_fe():
 
+    # Setup calculation to look for data already available.
+    # The test data is for methane.
+    calc = hfe.Calculation()
+    calc.data_dir = 'reference/mden_data'
+    # The decouple data has some extra windows than default
+    calc.lambdas['decouple'] = np.array("0.0 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0".split(), np.float64)
+    # Sum over the three phases for avg and sem
+    avg_sum = 0.0
+    sem_sum = 0.0
+    for phase in ['decharge', 'decouple', 'recharge']:
+        calc.get_fe(phase)
+        avg_sum += calc.fe_avgs[phase]
+        sem_sum += calc.fe_sems[phase]**2
+
+    # Compare with reference. These are bootstrapped values so we'll
+    # need to increase the tolerance for np.allclose
+    # Compare the mean hydration free energy with reference value
+    assert np.allclose([-1.0*avg_sum], [2.471], atol=2.0e-3)
+    # Compare the computed SEM with reference value
+    assert np.allclose([np.sqrt(sem_sum)], [0.051], atol=2.0e-3)
 
 
 
