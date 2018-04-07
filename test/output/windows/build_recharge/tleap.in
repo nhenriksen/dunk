@@ -1,8 +1,0 @@
-source leaprc.gaff
-source leaprc.water.tip3p
-loadamberparams thf.frcmod
-THF = loadmol2 thf.mol2
-model = combine{ THF THF }
-savepdb model recharge.pdb
-saveamberparm model init.recharge.prmtop init.recharge.rst7
-quit

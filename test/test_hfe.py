@@ -109,7 +109,7 @@ def test_run_windows_no_pmemd():
             assert test_file == ref_file
 
     # Remove output
-    #shutil.rmtree('output')
+    shutil.rmtree('output')
 
 
 @pytest.mark.slow

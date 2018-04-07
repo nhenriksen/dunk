@@ -1,7 +1,0 @@
-parm init.recharge.prmtop
-loadcoordinates init.recharge.rst7
-timerge :1 :2 :1 :2
-parmout recharge.prmtop
-writecoordinates recharge.rst7
-go
-                
