@@ -1,11 +1,11 @@
 ### If you need to do a fresh install, enable following
-#rm -rf $HOME/miniconda
+rm -rf $HOME/miniconda
+rm -rf $HOME/.cache/pip
 
 ### Regular install, check for cached first.
 if [ -d "$HOME/miniconda" ]; then
     export PATH="$HOME/miniconda/bin:$PATH"
-    conda list
-    pip list
+    source activate myenv
 else
     if [[ "$TRAVIS_PYTHON_VERSION" == "2.7" ]]; then
         wget https://repo.continuum.io/miniconda/Miniconda2-latest-Linux-x86_64.sh -O miniconda.sh;
@@ -18,10 +18,10 @@ else
     conda create -y -n myenv python=$TRAVIS_PYTHON_VERSION
     conda install -y -n myenv numpy pymbar pytest pytest-cov codecov
     conda install -y -n myenv ambertools=17.0 -c http://ambermd.org/downloads/ambertools/conda/
+    source activate myenv
+    pip install git+https://github.com/slochower/pAPRika@4f204a1a1190386d652e38464e45582d8734b705
 fi
 
-source activate myenv
-conda list
-pip list
 python --version
+conda list
 
