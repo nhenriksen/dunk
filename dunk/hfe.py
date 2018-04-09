@@ -198,7 +198,7 @@ class Calculation(object):
         """
         # Stash existing data_dir if we request it
         if self.stash_existing and os.path.isdir(self.data_dir):
-            log.info('The directory '+self.data_dir+' already exists. Stashing ...'
+            log.info('The directory '+self.data_dir+' already exists. Stashing ...')
             stash_dir = self.data_dir+"_{:%Y.%m.%d_%H.%M.%S}".format(datetime.now())
             shutil.move(self.data_dir, stash_dir)
         if not os.path.isdir(self.data_dir):
