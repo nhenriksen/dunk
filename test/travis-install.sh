@@ -1,6 +1,6 @@
 ### If you need to do a fresh install, enable following
-rm -rf $HOME/miniconda
-rm -rf $HOME/.cache/pip
+#rm -rf $HOME/miniconda
+#rm -rf $HOME/.cache/pip
 
 ### Regular install, check for cached first.
 if [ -d "$HOME/miniconda" ]; then

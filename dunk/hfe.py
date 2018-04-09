@@ -54,6 +54,9 @@ class Calculation(object):
         leap_load_lines : list
             The tleap load commands to build your system as a list of strings. The default
             builds your molecule with GAFF v1.8 in TIP3P water.
+        buffer_value : float
+            The tleap buffer value for its solvateoct command. This specifies the minimum 
+            distance between all solute atoms and the edge of the periodic boundary.
         vac_exec : str
             Executable for gas phase simulations. Default: pmemd
         solv_exec : str
@@ -130,6 +133,7 @@ class Calculation(object):
             'loadamberparams '+self._frcmod,
             self._residue_name+' = loadmol2 '+self._mol2,
             ]
+        self.buffer_value = 15.0
 
         # Execution settings
         self.vac_exec = 'pmemd'
@@ -194,10 +198,12 @@ class Calculation(object):
         """
         # Stash existing data_dir if we request it
         if self.stash_existing and os.path.isdir(self.data_dir):
+            log.info('The directory '+self.data_dir+' already exists. Stashing ...'
             stash_dir = self.data_dir+"_{:%Y.%m.%d_%H.%M.%S}".format(datetime.now())
             shutil.move(self.data_dir, stash_dir)
         if not os.path.isdir(self.data_dir):
             os.makedirs(self.data_dir)
+            log.info('Creating a directory for calculations: '+self.data_dir)
 
     def build_system(self, phase):
         """
@@ -237,7 +243,7 @@ class Calculation(object):
 
             # Solvate for decharge and decouple
             if phase in ['decharge', 'decouple']:
-                f.write("solvateoct model {} 15.0 iso\n".format(self.water_box))
+                f.write("solvateoct model {} {} iso\n".format(self.water_box,self.buffer_value))
 
             # Save files
             f.write("savepdb model {}.pdb\n".format(phase))
